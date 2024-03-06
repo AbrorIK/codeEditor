@@ -1,48 +1,57 @@
 package com.example.codeeditor.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 @Service
 public class CodeCompiler {
-    private final SandboxExecutor sandboxExecutor;
 
-    @Autowired
-    public CodeCompiler(SandboxExecutor sandboxExecutor) {
-        this.sandboxExecutor = sandboxExecutor;
+    private static final String JUDGE0_API_URL = "https://judge0-ce.p.rapidapi.com/submissions?base64_encoded=true&wait=true&fields=*";
+    private static final String JUDGE0_API_KEY = "";
+
+
+    public String compile(String code) throws IOException, InterruptedException, URISyntaxException {
+        // Construct the request body
+        String requestBody = "{\n" +
+                "    \"language_id\": 71,\n" +
+                "    \"source_code\": \"" + base64Encode(code) + "\",\n" +
+                "    \"stdin\": \"world\"\n" +
+                "}";
+
+        // Create the HTTP request
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(new URI(JUDGE0_API_URL))
+                .header("content-type", "application/json")
+                .header("X-RapidAPI-Key", JUDGE0_API_KEY)
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+
+        // Send the HTTP request
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonNode rootNode = objectMapper.readTree(response.body());
+
+        // Return the output
+        String output = rootNode.get("stdout").asText();
+
+        byte[] decoded = Base64.getMimeDecoder().decode(output);
+        String decodedStr = new String(decoded, StandardCharsets.UTF_8);
+
+        return decodedStr;
     }
 
-    // Directory for storing temporary files
-    protected static final String TEMP_DIRECTORY = "src/main/java/com/example/codeeditor/temp";
-
-    // Compile Java code
-    public String compile(String code) throws IOException, InterruptedException {
-        // Create a temporary directory
-        File tempDir = new File(TEMP_DIRECTORY);
-        if (!tempDir.exists()) {
-            tempDir.mkdir();
-        }
-
-        // Write code to a temporary Java source file
-        File javaFile = new File(TEMP_DIRECTORY + "/Main.java");
-        try (FileWriter writer = new FileWriter(javaFile)) {
-            writer.write(code);
-        }
-
-        // Compile the Java code
-        Process compileProcess = Runtime.getRuntime().exec("javac Main.java", null, tempDir);
-        compileProcess.waitFor();
-
-        // Check if compilation was successful
-        if (compileProcess.exitValue() == 0) {
-            return "Compilation successful";
-        } else {
-            javaFile.delete();
-            return "Compilation failed!";
-        }
+    private String base64Encode(String input) {
+        return java.util.Base64.getEncoder().encodeToString(input.getBytes());
     }
 }
